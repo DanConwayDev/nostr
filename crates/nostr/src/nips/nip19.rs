@@ -166,8 +166,8 @@ impl ToBech32 for EventId {
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Nip19Event {
-    event_id: EventId,
-    relays: Vec<String>,
+    pub event_id: EventId,
+    pub relays: Vec<String>,
 }
 
 impl Nip19Event {
