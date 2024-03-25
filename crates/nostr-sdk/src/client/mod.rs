@@ -1303,3 +1303,54 @@ impl Client {
         Ok(self.pool.handle_notifications(func).await?)
     }
 }
+
+mod tests {
+    use async_utility::futures_util::{stream, StreamExt};
+
+    use super::*;
+
+    async fn get_events() -> Vec<Vec<Event>> {
+        let client = Client::new(Keys::generate());
+        let relays = &[
+            nostr::Url::parse("wss://relay.damus.io").unwrap(),
+            nostr::Url::parse("wss://purplerelay.com").unwrap(),
+        ];
+        for relay in relays {
+            client.add_relay(relay).await.unwrap();
+        }
+        let relays_map = client.relays().await;
+
+        let futures: Vec<_> = relays
+            .clone()
+            .iter()
+            .map(|r| relays_map.get(r).unwrap())
+            .map(|relay| async {
+                if !relay.is_connected().await {
+                    relay.connect(None).await;
+                }
+                relay
+                    .get_events_of(
+                        vec!(Filter::new()
+                            // yuki
+                            .author(PublicKey::from_hex(
+                                "68d81165918100b7da43fc28f7d1fc12554466e1115886b9e7bb326f65ec4272",
+                            ).unwrap())
+                            .kind(Kind::Metadata)),
+                        // 20 is nostr_sdk default
+                        std::time::Duration::from_millis(50),
+                        FilterOptions::ExitOnEOSE,
+                    )
+                    .await
+                    .unwrap_or(vec![])
+            })
+            .collect();
+        stream::iter(futures).buffer_unordered(15).collect().await
+    }
+    #[tokio::test]
+    async fn stack_overflow() {
+        let res = get_events().await;
+        assert_eq!(res.len(), 2);
+        let res = get_events().await;
+        assert_eq!(res.len(), 2)
+    }
+}
