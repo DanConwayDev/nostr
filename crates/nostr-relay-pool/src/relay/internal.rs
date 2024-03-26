@@ -1062,6 +1062,8 @@ impl InternalRelay {
             msgs.push(ClientMessage::event(event));
         }
 
+        let mut notifications = self.internal_notification_sender.subscribe();
+
         // Batch send messages
         self.batch_msg(msgs, opts).await?;
 
@@ -1069,7 +1071,6 @@ impl InternalRelay {
         time::timeout(Some(opts.timeout), async {
             let mut published: HashSet<EventId> = HashSet::new();
             let mut not_published: HashMap<EventId, String> = HashMap::new();
-            let mut notifications = self.internal_notification_sender.subscribe();
             while let Ok(notification) = notifications.recv().await {
                 match notification {
                     RelayNotification::Message {
