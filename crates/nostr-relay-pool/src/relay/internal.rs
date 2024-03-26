@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_utility::futures_util::future::{join, join_all};
 #[cfg(not(target_arch = "wasm32"))]
 use async_utility::futures_util::stream::AbortHandle;
 use async_utility::{futures_util, thread, time};
@@ -1062,11 +1063,8 @@ impl InternalRelay {
             msgs.push(ClientMessage::event(event));
         }
 
-        // Batch send messages
-        self.batch_msg(msgs, opts).await?;
-
         // Hanlde responses
-        time::timeout(Some(opts.timeout), async {
+        let handle_responses = time::timeout(Some(opts.timeout), async {
             let mut published: HashSet<EventId> = HashSet::new();
             let mut not_published: HashMap<EventId, String> = HashMap::new();
             let mut notifications = self.internal_notification_sender.subscribe();
@@ -1121,9 +1119,16 @@ impl InternalRelay {
             } else {
                 Err(Error::EventsNotPublished(not_published))
             }
-        })
-        .await
-        .ok_or(Error::Timeout)?
+        });
+
+        // Batch send messages
+        let send_batch_msg = self.batch_msg(msgs, opts);
+
+        let (send_batch_msg_res, handle_responses_res) =
+            join(send_batch_msg, handle_responses).await;
+
+        send_batch_msg_res?;
+        handle_responses_res.ok_or(Error::Timeout)?
     }
 
     async fn resubscribe_all(&self, opts: RelaySendOptions) -> Result<(), Error> {
